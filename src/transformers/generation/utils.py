@@ -1434,6 +1434,7 @@ class GenerationMixin:
         streamer: Optional["BaseStreamer"] = None,
         negative_prompt_ids: Optional[torch.Tensor] = None,
         negative_prompt_attention_mask: Optional[torch.Tensor] = None,
+        aux_metrics: Optional[dict] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         r"""
@@ -1498,6 +1499,8 @@ class GenerationMixin:
                 size. This is an experimental feature, subject to breaking API changes in future versions.
             negative_prompt_attention_mask (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
                 Attention_mask for `negative_prompt_ids`.
+            aux_metrics:
+                Auxillary metrics saved to a dictionary
             kwargs (`Dict[str, Any]`, *optional*):
                 Ad hoc parametrization of `generate_config` and/or additional model-specific kwargs that will be
                 forwarded to the `forward` function of the model. If the model is an encoder-decoder model, encoder
@@ -1724,6 +1727,7 @@ class GenerationMixin:
                 return_dict_in_generate=generation_config.return_dict_in_generate,
                 synced_gpus=synced_gpus,
                 streamer=streamer,
+                aux_metrics=aux_metrics,
                 **model_kwargs,
             )
         if generation_mode == GenerationMode.GREEDY_SEARCH:
@@ -4405,6 +4409,7 @@ class GenerationMixin:
         return_dict_in_generate: Optional[bool] = None,
         synced_gpus: bool = False,
         streamer: Optional["BaseStreamer"] = None,
+        aux_metrics: Optional[dict] = None,
         **model_kwargs,
     ):
         r"""
@@ -4463,6 +4468,8 @@ class GenerationMixin:
             streamer (`BaseStreamer`, *optional*):
                 Streamer object that will be used to stream the generated sequences. Generated tokens are passed
                 through `streamer.put(token_ids)` and the streamer is responsible for any further processing.
+            aux_metrics:
+                Dictionary for passing up auxillary metrics
             model_kwargs:
                 Additional model specific keyword arguments will be forwarded to the `forward` function of the model.
                 If model is an encoder-decoder model the kwargs should include `encoder_outputs`.
@@ -4629,7 +4636,7 @@ class GenerationMixin:
             # 👉 Apply algorithm 1 from the speculative decoding paper (https://arxiv.org/pdf/2211.17192.pdf).
             max_matches = max_len - cur_len - 1
             if do_sample and candidate_logits is not None:
-                valid_tokens, n_matches = _speculative_sampling(
+                valid_tokens, n_matches, n_correct = _speculative_sampling(
                     candidate_input_ids,
                     candidate_logits,
                     candidate_length,
@@ -4650,6 +4657,7 @@ class GenerationMixin:
 
                 candidate_new_tokens = candidate_input_ids[:, -candidate_length:]
                 n_matches = ((~(candidate_new_tokens == selected_tokens[:, :-1])).cumsum(dim=-1) < 1).sum()
+                n_correct = (candidate_new_tokens == selected_tokens[:, :-1]).sum()
 
                 # Ensure we don't generate beyond max_len or an EOS token
                 if last_assistant_token_is_eos and n_matches == candidate_length:
@@ -4657,6 +4665,17 @@ class GenerationMixin:
                 n_matches = min(n_matches, max_matches)
                 valid_tokens = selected_tokens[:, : n_matches + 1]
 
+            # Store n_matches and n_correct in aux_metrics
+            if aux_metrics is not None:
+                if "n_matches" not in aux_metrics:
+                    aux_metrics["n_matches"] = [n_matches]
+                else:
+                    aux_metrics["n_matches"].append(n_matches)
+
+                if "n_correct" not in aux_metrics:
+                    aux_metrics["n_correct"] = [n_correct]
+                else:
+                    aux_metrics["n_correct"].append(n_correct)
             # 4. Update variables according to the number of matching assistant tokens. Remember: the token generated
             # by the model after the last candidate match is also valid, as it is generated from a correct sequence.
             # Because of this last token, assisted generation search reduces to a normal greedy search/sample if there
@@ -4798,6 +4817,7 @@ def _speculative_sampling(
     r_i = torch.rand_like(probability_ratio)
     is_accepted = r_i <= probability_ratio
     n_matches = (~is_accepted.cumsum(dim=-1) < 1).sum()  # this is `n` in algorithm 1
+    n_correct = is_accepted.sum()
 
     # Ensure we don't generate beyond max_len or an EOS token (not in algorithm 1, but needed for correct behavior)
     if last_assistant_token_is_eos and n_matches == candidate_length:
@@ -4820,7 +4840,7 @@ def _speculative_sampling(
     else:
         valid_tokens = t
 
-    return valid_tokens, n_matches
+    return valid_tokens, n_matches, n_correct
 
 
 def _split_model_outputs(outputs, new_outputs, cur_len, added_len, is_decoder_attention=False):
