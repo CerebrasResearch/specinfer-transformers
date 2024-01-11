@@ -249,6 +249,9 @@ class GenerationConfig(PushToHubMixin):
               reduce by 1
             - `"constant"`: `num_assistant_tokens` stays unchanged during generation
 
+        use_target_kv_cache (`bool`, *optional*, defaults to `False`):
+            Whether to use the target model's kv-cache in each decoding step; The kv-cache sizes must be the same.
+
         > Wild card
 
         generation_kwargs:
@@ -319,6 +322,7 @@ class GenerationConfig(PushToHubMixin):
         # Assistant generation
         self.num_assistant_tokens = kwargs.pop("num_assistant_tokens", 5)
         self.num_assistant_tokens_schedule = kwargs.pop("num_assistant_tokens_schedule", "heuristic")
+        self.use_target_kv_cache = kwargs.pop("use_target_kv_cache", False)
 
         # Wild card
         self.generation_kwargs = kwargs.pop("generation_kwargs", {})

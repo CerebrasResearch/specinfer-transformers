@@ -17,6 +17,7 @@ import copy
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import torch
+import numpy as np
 
 
 if TYPE_CHECKING:
@@ -149,13 +150,14 @@ class AssistedCandidateGenerator(CandidateGenerator):
         self.generation_config.return_dict_in_generate = True
         self.generation_config.output_scores = True
 
-    def get_candidates(self, input_ids: torch.LongTensor) -> Tuple[torch.LongTensor, Optional[torch.FloatTensor]]:
+    def get_candidates(self, input_ids: torch.LongTensor, target_past_key_values: None) -> Tuple[torch.LongTensor, Optional[torch.FloatTensor]]:
         """
         Fetches the candidates to be tried for the current input.
 
         Args:
             input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
                 Indices of input sequence tokens in the vocabulary. [What are input IDs?](../glossary#input-ids)
+            target_past_key_values: kv-cache from the target model if it is available
 
         Return:
             `torch.LongTensor` of shape `(batch_size, candidate_length)` containing the candidate sequences to be
@@ -164,8 +166,14 @@ class AssistedCandidateGenerator(CandidateGenerator):
         """
         # 1. If it is not the first round of candidate generation, prepare the inputs based on the input_ids length
         # (which implicitly contains the number of accepted candidates from the previous round)
-        has_past_key_values = self.assistant_kwargs.get("past_key_values", None) is not None
+        has_past_key_values = self.assistant_kwargs.get("past_key_values", None) is not None or target_past_key_values is not None
         if has_past_key_values:
+            # Use the kv-cache from the target model if it is available
+            if target_past_key_values is not None:
+                # print(f"ssm kv-cache: {np.shape(self.assistant_kwargs['past_key_values'])}")
+                # print(f"target kv-cache: {np.shape(target_past_key_values)}")
+                self.assistant_kwargs["past_key_values"] = target_past_key_values
+
             new_cur_len = input_ids.shape[-1]
 
             new_cache_size = new_cur_len - 1

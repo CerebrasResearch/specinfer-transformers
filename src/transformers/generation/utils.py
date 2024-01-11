@@ -889,7 +889,7 @@ class GenerationMixin:
                 )
 
         return model_kwargs
-
+ 
     def _reorder_cache(self, past_key_values, beam_idx):
         raise NotImplementedError(
             f"Make sure that a `_reorder_cache` function is correctly implemented in {self.__class__.__module__} to"
@@ -1727,6 +1727,7 @@ class GenerationMixin:
                 return_dict_in_generate=generation_config.return_dict_in_generate,
                 synced_gpus=synced_gpus,
                 streamer=streamer,
+                use_target_kv_cache=generation_config.use_target_kv_cache,
                 aux_metrics=aux_metrics,
                 **model_kwargs,
             )
@@ -4409,6 +4410,7 @@ class GenerationMixin:
         return_dict_in_generate: Optional[bool] = None,
         synced_gpus: bool = False,
         streamer: Optional["BaseStreamer"] = None,
+        use_target_kv_cache: bool = None,
         aux_metrics: Optional[dict] = None,
         **model_kwargs,
     ):
@@ -4468,8 +4470,10 @@ class GenerationMixin:
             streamer (`BaseStreamer`, *optional*):
                 Streamer object that will be used to stream the generated sequences. Generated tokens are passed
                 through `streamer.put(token_ids)` and the streamer is responsible for any further processing.
+            use_target_kv_cache:
+                Whether to use target kv_cache.
             aux_metrics:
-                Dictionary for passing up auxillary metrics
+                Dictionary for passing up auxillary metrics.
             model_kwargs:
                 Additional model specific keyword arguments will be forwarded to the `forward` function of the model.
                 If model is an encoder-decoder model the kwargs should include `encoder_outputs`.
@@ -4592,7 +4596,9 @@ class GenerationMixin:
             cur_len = input_ids.shape[-1]
 
             #  1. Fetch candidate sequences from a `CandidateGenerator`
-            candidate_input_ids, candidate_logits = candidate_generator.get_candidates(input_ids)
+            target_kv_cache = model_kwargs.get("past_key_values") if use_target_kv_cache else None
+
+            candidate_input_ids, candidate_logits = candidate_generator.get_candidates(input_ids, target_past_key_values=target_kv_cache)
             candidate_length = candidate_input_ids.shape[1] - input_ids.shape[1]
             last_assistant_token_is_eos = (
                 ~candidate_input_ids[:, -1]
