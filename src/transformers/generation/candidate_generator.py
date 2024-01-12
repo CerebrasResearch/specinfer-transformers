@@ -170,6 +170,8 @@ class AssistedCandidateGenerator(CandidateGenerator):
         if has_past_key_values:
             # Use the kv-cache from the target model if it is available
             if target_past_key_values is not None:
+                assert np.shape(self.assistant_kwargs['past_key_values'])[0] == np.shape(target_past_key_values)[0], \
+                    "SSM and Target Model KV-cache must have the same first dimension with the use_target_kv_cache option enabled"
                 # print(f"ssm kv-cache: {np.shape(self.assistant_kwargs['past_key_values'])}")
                 # print(f"target kv-cache: {np.shape(target_past_key_values)}")
                 self.assistant_kwargs["past_key_values"] = target_past_key_values
