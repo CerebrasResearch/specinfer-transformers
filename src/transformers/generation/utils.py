@@ -4682,6 +4682,20 @@ class GenerationMixin:
                     aux_metrics["n_correct"] = [n_correct]
                 else:
                     aux_metrics["n_correct"].append(n_correct)
+
+                # Get the accepted tokens for further eval
+                if "selected_tokens" not in aux_metrics:
+                    aux_metrics["selected_tokens"] = [selected_tokens[:, :-1]]
+                else:
+                    aux_metrics["selected_tokens"].append(selected_tokens[:, :-1])
+
+                
+                # Get the speculative tokens for further eval 
+                if "candidate_tokens" not in aux_metrics:
+                    aux_metrics["candidate_tokens"] = [candidate_new_tokens]
+                else:
+                    aux_metrics["candidate_tokens"].append(candidate_new_tokens)
+
             # 4. Update variables according to the number of matching assistant tokens. Remember: the token generated
             # by the model after the last candidate match is also valid, as it is generated from a correct sequence.
             # Because of this last token, assisted generation search reduces to a normal greedy search/sample if there
